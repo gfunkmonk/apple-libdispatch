@@ -167,7 +167,13 @@ option(ENABLE_THREAD_LOCAL_STORAGE "enable usage of thread local storage via _Th
 set(DISPATCH_USE_THREAD_LOCAL_STORAGE ${ENABLE_THREAD_LOCAL_STORAGE})
 
 
-check_linker_flag(C "LINKER:--build-id=sha1" LINKER_SUPPORTS_BUILD_ID)
+if(APPLE)
+  # Apple's linker (ld64) does not support --build-id; disable it explicitly
+  # so cross-compilation with osxcross works correctly even if lld is used.
+  set(LINKER_SUPPORTS_BUILD_ID FALSE)
+else()
+  check_linker_flag(C "LINKER:--build-id=sha1" LINKER_SUPPORTS_BUILD_ID)
+endif()
 
 check_symbol_exists(__GNU_LIBRARY__ "features.h" _GNU_SOURCE)
 if(_GNU_SOURCE)
@@ -300,8 +306,8 @@ endif()
 
 
 if(APPLE)
-  add_compile_options($<:$<COMPILE_LANGUAGE:C,CXX>:-fmodule-map-file=${PROJECT_SOURCE_DIR}/dispatch/darwin/module.modulemap>
-                      $<:$<COMPILE_LANGUAGE:C,CXX>:-fmodule-map-file=${PROJECT_SOURCE_DIR}/private/darwin/module.modulemap>)
+  add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-fmodule-map-file=${PROJECT_SOURCE_DIR}/dispatch/darwin/module.modulemap>
+                      $<$<COMPILE_LANGUAGE:C,CXX>:-fmodule-map-file=${PROJECT_SOURCE_DIR}/private/darwin/module.modulemap>)
 else()
   add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-fmodule-map-file=${PROJECT_SOURCE_DIR}/dispatch/generic/module.modulemap>
                       $<$<COMPILE_LANGUAGE:C,CXX>:-fmodule-map-file=${PROJECT_SOURCE_DIR}/private/generic/module.modulemap>)
@@ -332,7 +338,16 @@ add_subdirectory(dispatch)
 add_subdirectory(man)
 add_subdirectory(os)
 add_subdirectory(private)
-if(NOT APPLE)
+if(APPLE)
+  # On Apple platforms, the Blocks runtime is part of the system (libSystem).
+  # Create an interface target so that downstream CMake targets can depend on
+  # BlocksRuntime::BlocksRuntime without requiring a separate library link.
+  add_library(BlocksRuntime INTERFACE)
+  add_library(BlocksRuntime::BlocksRuntime ALIAS BlocksRuntime)
+  set_property(GLOBAL APPEND PROPERTY DISPATCH_EXPORTS BlocksRuntime)
+  install(TARGETS BlocksRuntime
+          EXPORT dispatchExports)
+else()
   add_subdirectory(src/BlocksRuntime)
 endif()
 add_subdirectory(src)
